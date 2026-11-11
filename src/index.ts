@@ -1,4 +1,4 @@
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
+import { McpServer, ResourceTemplate, completable } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 
@@ -215,8 +215,14 @@ function createServer() {
                 "Analyze a failed automated test, identify its likely root cause, classify the failure, and recommend debugging steps.",
 
             argsSchema: z.object({
-                testName: z.string()
-                    .describe("Name of the failed automated test"),
+                testName: completable(
+                    z.string().describe("Name of the failed automated test"),
+                    (value) => {
+                        return availableTestNames.filter(testName =>
+                            testName.toLowerCase().includes(value.toLowerCase())
+                        );
+                    }
+                ),
 
                 errorMessage: z.string()
                     .describe("Error message produced by the test"),
@@ -277,7 +283,14 @@ Do not claim certainty when the available evidence is insufficient.
             };
         }
     );
-
+    const availableTestNames = [
+        "checkout_should_complete",
+        "checkout_invalid_coupon",
+        "checkout_payment_failure",
+        "login_with_valid_credentials",
+        "login_with_invalid_credentials",
+        "registration_with_existing_email"
+    ];
 
 
     return server;
