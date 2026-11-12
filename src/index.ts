@@ -3,10 +3,34 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 
 function createServer() {
-    const server = new McpServer({
-        name: "hello-mcp-server",
-        version: "1.0.0"
-    });
+
+    const server = new McpServer(
+        {
+            name: "hello-mcp-server",
+            version: "1.0.0"
+        },
+        {
+            capabilities: {
+                resources: {
+                    subscribe: true
+                }
+            }
+        }
+    );
+
+    const TEST_RUN_URI = "qa://test-runs/latest";
+
+    let latestTestRun = {
+        runId: "RUN-001",
+        total: 100,
+        passed: 95,
+        failed: 5,
+        updatedAt: new Date().toISOString()
+    };
+
+    const subscribedUris = new Set<string>();
+
+
 
     server.registerTool(
         "say_hello",
@@ -96,6 +120,44 @@ function createServer() {
             };
         }
     );
+
+    server.registerTool(
+        "simulate_test_run_update",
+        {
+            title: "Simulate Test Run Update",
+            description: "Simulates completion of a test run and updates the latest QA report",
+            inputSchema: z.object({
+                passed: z.int().min(0),
+                failed: z.int().min(0)
+            })
+        },
+        async ({ passed, failed }) => {
+
+            latestTestRun = {
+                ...latestTestRun,
+                total: passed + failed,
+                passed,
+                failed,
+                updatedAt: new Date().toISOString()
+            };
+
+            if (subscribedUris.has(TEST_RUN_URI)) {
+                await server.server.sendResourceUpdated({
+                    uri: TEST_RUN_URI
+                });
+            }
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: `Test run updated. Total: ${latestTestRun.total}, Passed: ${passed}, Failed: ${failed}`
+                    }
+                ]
+            };
+        }
+    );
+
 
     server.registerResource(
         "qa-test-cases",
@@ -206,6 +268,56 @@ function createServer() {
             };
         }
     );
+
+    server.registerResource(
+        "latest-test-run",
+        TEST_RUN_URI,
+        {
+            title: "Latest QA Test Run",
+            description: "Latest Playwright test execution summary",
+            mimeType: "application/json"
+        },
+        async (uri) => ({
+            contents: [
+                {
+                    uri: uri.href,
+                    mimeType: "application/json",
+                    text: JSON.stringify(latestTestRun, null, 2)
+                }
+            ]
+        })
+    );
+
+    server.server.setRequestHandler(
+        "resources/subscribe",
+        async (request) => {
+            const uri = request.params.uri;
+
+            if (uri !== TEST_RUN_URI) {
+                throw new Error(`Unknown resource: ${uri}`);
+            }
+
+            subscribedUris.add(uri);
+
+            console.error(`Subscribed to: ${uri}`);
+
+            return {};
+        }
+    );
+
+    server.server.setRequestHandler(
+        "resources/unsubscribe",
+        async (request) => {
+            const uri = request.params.uri;
+
+            subscribedUris.delete(uri);
+
+            console.error(`Unsubscribed from: ${uri}`);
+
+            return {};
+        }
+    );
+
 
     server.registerPrompt(
         "analyze-test-failure",
