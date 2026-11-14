@@ -1,8 +1,17 @@
-import { McpServer, ResourceTemplate, completable } from "@modelcontextprotocol/server";
+import {
+    McpServer,
+    ResourceTemplate,
+    completable,
+    inputRequired,
+    acceptedContent,
+    type McpRequestContext
+} from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
+import Anthropic from "@anthropic-ai/sdk";
+import "dotenv/config";
 
-function createServer() {
+function createServer(reqCtx: McpRequestContext) {
 
     const server = new McpServer(
         {
@@ -403,6 +412,336 @@ Do not claim certainty when the available evidence is insufficient.
         "login_with_invalid_credentials",
         "registration_with_existing_email"
     ];
+
+    //     server.registerTool(
+    //         "analyze_failure_with_sampling",
+    //         {
+    //             title: "Analyze Test Failure with AI",
+    //             description: "Uses the connected MCP client's LLM to analyze a Playwright test failure",
+    //             inputSchema: z.object({
+    //                 testName: z.string(),
+    //                 errorMessage: z.string(),
+    //                 stackTrace: z.string()
+    //             })
+    //         },
+    //         async ({ testName, errorMessage, stackTrace }, ctx) => {
+
+    //             const messages = [
+    //                 {
+    //                     role: "user" as const,
+    //                     content: {
+    //                         type: "text" as const,
+    //                         text: `
+    // You are a Senior QA Automation Engineer.
+
+    // Analyze this Playwright test failure.
+
+    // Test Name: ${testName}
+
+    // Error Message: ${errorMessage}
+
+    // Stack Trace: ${stackTrace}
+
+    // Provide:
+    // 1. Failure category
+    // 2. Likely root cause
+    // 3. Recommended debugging steps
+    // 4. Suggested automation improvements
+
+    // Do not assume the root cause without sufficient evidence.
+    //                     `
+    //                     }
+    //                 }
+    //             ];
+
+    //             try {
+    //                 // Request AI assistance through the MCP client
+    //                 const response = await ctx.mcpReq.requestSampling({
+    //                     messages,
+    //                     maxTokens: 500
+    //                 });
+
+    //                 const content = response.content;
+
+    //                 const analysis =
+    //                     !Array.isArray(content) && content.type === "text"
+    //                         ? content.text
+    //                         : "Unable to generate analysis";
+
+    //                 return {
+    //                     content: [
+    //                         {
+    //                             type: "text" as const,
+    //                             text: analysis
+    //                         }
+    //                     ]
+    //                 };
+
+    //             } catch (error) {
+    //                 return {
+    //                     isError: true,
+    //                     content: [
+    //                         {
+    //                             type: "text" as const,
+    //                             text: `Sampling failed: ${error instanceof Error
+    //                                     ? error.message
+    //                                     : "Unknown error"
+    //                                 }`
+    //                         }
+    //                     ]
+    //                 };
+    //             }
+    //         }
+    //     );
+
+
+    //     server.registerTool(
+    //         "analyze_failure_with_ai",
+    //         {
+    //             title: "Analyze Test Failure with AI",
+    //             description: "Uses Claude API to analyze a Playwright test failure",
+    //             inputSchema: z.object({
+    //                 testName: z.string(),
+    //                 errorMessage: z.string(),
+    //                 stackTrace: z.string()
+    //             })
+    //         },
+    //         async ({ testName, errorMessage, stackTrace }) => {
+
+    //             try {
+    //                 const apiKey = process.env.ANTHROPIC_API_KEY;
+    //                 const model = process.env.ANTHROPIC_MODEL;
+
+    //                 if (!apiKey || !model) {
+    //                     throw new Error(
+    //                         "ANTHROPIC_API_KEY and ANTHROPIC_MODEL must be configured"
+    //                     );
+    //                 }
+
+    //                 const anthropic = new Anthropic({
+    //                     apiKey
+    //                 });
+
+    //                 const response = await anthropic.messages.create({
+    //                     model,
+    //                     max_tokens: 500,
+    //                     messages: [
+    //                         {
+    //                             role: "user",
+    //                             content: `
+    // You are a Senior QA Automation Engineer.
+
+    // Analyze this Playwright test failure.
+
+    // Test Name: ${testName}
+
+    // Error Message: ${errorMessage}
+
+    // Stack Trace: ${stackTrace}
+
+    // Provide:
+    // 1. Failure category
+    // 2. Likely root cause
+    // 3. Recommended debugging steps
+    // 4. Suggested automation improvements
+
+    // Do not assume the root cause without sufficient evidence.
+    //                         `
+    //                         }
+    //                     ]
+    //                 });
+
+    //                 const analysis = response.content
+    //                     .filter(block => block.type === "text")
+    //                     .map(block => block.text)
+    //                     .join("\n");
+
+    //                 return {
+    //                     content: [
+    //                         {
+    //                             type: "text" as const,
+    //                             text: analysis || "No analysis generated."
+    //                         }
+    //                     ]
+    //                 };
+
+    //             } catch (error) {
+
+    //                 console.error("AI analysis failed:", error);
+
+    //                 return {
+    //                     isError: true,
+    //                     content: [
+    //                         {
+    //                             type: "text" as const,
+    //                             text: `AI analysis failed: ${error instanceof Error
+    //                                 ? error.message
+    //                                 : "Unknown error"
+    //                                 }`
+    //                         }
+    //                     ]
+    //                 };
+    //             }
+    //         }
+    //     );
+
+
+    server.registerTool(
+        "analyze_failure_with_ai",
+        {
+            title: "Analyze Test Failure with AI",
+            description:
+                "Returns a mock AI-style analysis of a Playwright test failure without calling an external LLM API",
+
+            inputSchema: z.object({
+                testName: z.string()
+                    .describe("Name of the failed Playwright test"),
+
+                errorMessage: z.string()
+                    .describe("Error message produced by the test"),
+
+                stackTrace: z.string()
+                    .describe("Stack trace associated with the failure")
+            })
+        },
+
+        async ({ testName, errorMessage, stackTrace }) => {
+
+            console.error("Analyzing test failure using mock implementation");
+
+            const analysis = `
+# Playwright Test Failure Analysis
+
+## 1. Test Details
+
+Test Name: ${testName}
+
+Error Message: ${errorMessage}
+
+Stack Trace:
+${stackTrace}
+
+## 2. Failure Category
+
+Backend/API Server Error
+
+The test received an unexpected HTTP 500 response instead of the expected HTTP 200 response.
+
+## 3. Likely Root Causes
+
+1. Backend service failure during request processing.
+2. Database connection or transaction failure.
+3. Unhandled exception in the checkout API.
+4. Payment gateway integration failure.
+5. Incorrect test data or environment configuration.
+
+## 4. Recommended Debugging Steps
+
+1. Capture and inspect the API response body.
+2. Check backend application logs.
+3. Verify database connectivity.
+4. Inspect the request payload.
+5. Check external service dependencies.
+6. Verify the test environment configuration.
+
+## 5. Suggested Automation Improvements
+
+1. Add detailed API request and response logging.
+2. Capture correlation IDs for failed requests.
+3. Include response payloads in Allure reports.
+4. Add meaningful assertions for API responses.
+5. Improve failure diagnostics in the Playwright framework.
+
+## 6. Final Assessment
+
+Failure Classification: Backend/API Error
+
+Confidence: Medium
+
+Note: This is a predefined mock analysis for development and testing.
+It is not an actual AI-generated diagnosis.
+`;
+
+            return {
+                content: [
+                    {
+                        type: "text" as const,
+                        text: analysis
+                    }
+                ]
+            };
+        }
+    );
+
+
+    const qaExecutionConfigSchema = z.object({
+        environment: z.enum(["QA", "Staging", "Production"])
+            .describe("Environment in which tests should execute"),
+
+        browser: z.enum(["Chromium", "Firefox", "WebKit"])
+            .describe("Browser for test execution"),
+
+        testSuite: z.enum(["Smoke", "Regression"])
+            .describe("Test suite to execute")
+    });
+
+    server.registerTool(
+        "collect_qa_execution_config",
+        {
+            title: "Collect QA Execution Configuration",
+
+            description:
+                "Collects environment, browser and test suite details before executing QA tests",
+
+            // Explicit input schema ensures proper TypeScript inference.
+            inputSchema: z.object({})
+        },
+
+        async (_args, ctx) => {
+
+            // Check whether the user has already supplied the configuration.
+            const config = acceptedContent(
+                ctx.mcpReq.inputResponses,
+                "qaConfig",
+                qaExecutionConfigSchema
+            );
+
+            // If configuration is missing, request it from the client.
+            if (!config) {
+
+                return inputRequired({
+                    inputRequests: {
+                        qaConfig: inputRequired.elicit({
+                            message:
+                                "Please provide the QA test execution configuration.",
+
+                            requestedSchema: qaExecutionConfigSchema
+                        })
+                    }
+                });
+            }
+
+            // Configuration received successfully.
+            console.error("QA execution configuration received:", config);
+
+            return {
+                content: [
+                    {
+                        type: "text" as const,
+                        text: `
+QA Execution Configuration Received:
+
+Environment: ${config.environment}
+Browser: ${config.browser}
+Test Suite: ${config.testSuite}
+
+Configuration successfully collected.
+                    `
+                    }
+                ]
+            };
+        }
+    );
 
 
     return server;
